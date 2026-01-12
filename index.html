@@ -9,10 +9,11 @@
 :root{
   --bg:#f4f6f8;
   --card:#ffffff;
-  --text:#1f2933;
+  --text:#111827;
   --muted:#6b7280;
   --line:#e5e7eb;
   --accent:#2563eb;
+  --bad:#dc2626;
   --radius:14px;
 }
 
@@ -31,20 +32,17 @@ body{
 }
 
 .card{
-  width:min(800px,100%);
+  width:min(820px,100%);
   background:var(--card);
   border:1px solid var(--line);
   border-radius:var(--radius);
   box-shadow:0 10px 30px rgba(0,0,0,.08);
-  padding:20px;
+  padding:18px;
   display:grid;
-  gap:14px;
+  gap:12px;
 }
 
-h1{
-  margin:0;
-  font-size:18px;
-}
+h1{ margin:0; font-size:18px; }
 
 label{
   font-size:13px;
@@ -63,11 +61,10 @@ textarea{
   font-size:14px;
 }
 
-textarea:focus,
-select:focus,
-input:focus{
+textarea:focus, select:focus, input:focus{
   outline:none;
   border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(37,99,235,.12);
 }
 
 .row{
@@ -80,19 +77,20 @@ input:focus{
   .row{grid-template-columns:1fr}
 }
 
-select,
-input{
+select, input{
   width:100%;
   border-radius:10px;
   border:1px solid var(--line);
-  padding:8px;
+  padding:8px 10px;
   font-size:14px;
+  background:#fff;
 }
 
 .controls{
   display:flex;
   gap:10px;
   flex-wrap:wrap;
+  align-items:center;
 }
 
 button{
@@ -104,18 +102,18 @@ button{
   font-weight:600;
 }
 
-button:hover{
-  background:#eef2ff;
+button:hover{ background:#eef2ff; border-color:#c7d2fe; }
+button:disabled{ opacity:.55; cursor:not-allowed; }
+
+audio{ width:100%; }
+
+.msg{
+  font-size:13px;
+  color:var(--muted);
+  min-height:18px;
 }
 
-button:disabled{
-  opacity:.5;
-  cursor:not-allowed;
-}
-
-audio{
-  width:100%;
-}
+.msg.bad{ color:var(--bad); }
 </style>
 </head>
 
@@ -124,33 +122,43 @@ audio{
   <h1>Text to Speech</h1>
 
   <div>
-    <label>Text</label>
+    <label for="text">Text</label>
     <textarea id="text">Thank you for calling. Please listen carefully.</textarea>
   </div>
 
   <div class="row">
     <div>
-      <label>Voice</label>
+      <label for="voice">Voice</label>
       <select id="voice">
         <option value="alloy">alloy</option>
-        <option value="aria">aria</option>
+        <option value="ash">ash</option>
+        <option value="ballad">ballad</option>
+        <option value="coral">coral</option>
+        <option value="echo">echo</option>
+        <option value="fable">fable</option>
         <option value="nova">nova</option>
-        <option value="ember">ember</option>
         <option value="onyx">onyx</option>
+        <option value="sage">sage</option>
+        <option value="shimmer">shimmer</option>
+        <option value="verse">verse</option>
+        <option value="marin">marin</option>
+        <option value="cedar">cedar</option>
       </select>
     </div>
 
     <div>
-      <label>Speed</label>
+      <label for="speed">Speed</label>
       <select id="speed">
         <option value="1">1.0</option>
+        <option value="0.95">0.95</option>
         <option value="0.9">0.9</option>
+        <option value="0.85">0.85</option>
         <option value="0.8">0.8</option>
       </select>
     </div>
 
     <div>
-      <label>Filename</label>
+      <label for="filename">Filename</label>
       <input id="filename" value="tts-3cx.wav" />
     </div>
   </div>
@@ -160,6 +168,7 @@ audio{
   <div class="controls">
     <button id="preview">Preview</button>
     <button id="download" disabled>Download WAV</button>
+    <div class="msg" id="msg"></div>
   </div>
 </div>
 
@@ -171,57 +180,86 @@ const filenameEl = document.getElementById("filename");
 const player = document.getElementById("player");
 const previewBtn = document.getElementById("preview");
 const downloadBtn = document.getElementById("download");
+const msgEl = document.getElementById("msg");
 
 let lastBlob = null;
 let lastUrl = null;
 
-async function generate() {
+function setMsg(text, bad=false){
+  msgEl.textContent = text || "";
+  msgEl.classList.toggle("bad", !!bad);
+}
+
+async function generateWav() {
+  const text = (textEl.value || "").trim();
+  if (!text) {
+    setMsg("Enter some text first.", true);
+    return null;
+  }
+
+  setMsg("");
   previewBtn.disabled = true;
   downloadBtn.disabled = true;
 
-  const res = await fetch("/api/tts", {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body:JSON.stringify({
-      text: textEl.value,
-      voice: voiceEl.value,
-      speed: parseFloat(speedEl.value),
-      format: "wav"
-    })
-  });
+  try {
+    const res = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({
+        text,
+        voice: voiceEl.value,
+        speed: parseFloat(speedEl.value),
+        format: "wav"
+      })
+    });
 
-  if (!res.ok) {
+    if (!res.ok) {
+      const errText = await res.text().catch(()=> "");
+      setMsg(errText || `Request failed (${res.status})`, true);
+      return null;
+    }
+
+    const buffer = await res.arrayBuffer();
+    const blob = new Blob([buffer], { type: "audio/wav" });
+
+    if (lastUrl) URL.revokeObjectURL(lastUrl);
+    lastUrl = URL.createObjectURL(blob);
+
+    lastBlob = blob;
+    player.src = lastUrl;
+    downloadBtn.disabled = false;
+
+    return blob;
+  } catch (e) {
+    setMsg(e?.message || "Request failed.", true);
+    return null;
+  } finally {
     previewBtn.disabled = false;
-    return;
   }
-
-  const buffer = await res.arrayBuffer();
-  const blob = new Blob([buffer], { type:"audio/wav" });
-
-  if (lastUrl) URL.revokeObjectURL(lastUrl);
-  lastUrl = URL.createObjectURL(blob);
-
-  lastBlob = blob;
-  player.src = lastUrl;
-  downloadBtn.disabled = false;
-  previewBtn.disabled = false;
 }
 
-previewBtn.onclick = async () => {
-  await generate();
-  player.play().catch(()=>{});
-};
+previewBtn.addEventListener("click", async () => {
+  const blob = await generateWav();
+  if (blob) player.play().catch(()=>{});
+});
 
-downloadBtn.onclick = async () => {
-  if (!lastBlob) await generate();
+downloadBtn.addEventListener("click", async () => {
+  if (!lastBlob) {
+    const blob = await generateWav();
+    if (!blob) return;
+  }
+  const raw = (filenameEl.value || "tts-3cx.wav").trim();
+  const filename = raw.toLowerCase().endsWith(".wav") ? raw : (raw + ".wav");
 
+  const url = URL.createObjectURL(lastBlob);
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(lastBlob);
-  a.download = filenameEl.value.endsWith(".wav")
-    ? filenameEl.value
-    : filenameEl.value + ".wav";
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
   a.click();
-};
+  a.remove();
+  URL.revokeObjectURL(url);
+});
 </script>
 </body>
 </html>
