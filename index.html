@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenAI TTS → WAV (3CX)</title>
+  <style>
+    :root{
+      --bg:#0b1220;
+      --panel:#101a2e;
+      --text:#eaf0ff;
+      --muted:#a9b6d3;
+      --line:rgba(255,255,255,.12);
+      --accent:#6ea8ff;
+      --bad:#ff5c7a;
+      --good:#33d19a;
+      --radius:16px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      min-height:100vh;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      background:radial-gradient(1200px 600px at 20% 0%, rgba(110,168,255,.18), transparent 60%),
+                 radial-gradient(900px 500px at 80% 20%, rgba(51,209,154,.12), transparent 55%),
+                 var(--bg);
+      color:var(--text);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+    }
+    .card{
+      width:min(980px, 100%);
+      background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      box-shadow:0 24px 60px rgba(0,0,0,.35);
+      overflow:hidden;
+    }
+    header{
+      padding:18px 20px;
+      border-bottom:1px solid var(--line);
+      display:flex;
+      gap:12px;
+      align-items:center;
+      justify-content:space-between;
+    }
+    header .title{ display:flex; flex-direction:column; gap:2px; }
+    header h1{ margin:0; font-size:18px; letter-spacing:.2px; }
+    header p{ margin:0; color:var(--muted); font-size:13px; }
+
+    main{ padding:18px 20px 20px; display:grid; gap:14px; }
+
+    label{ font-size:13px; color:var(--muted); display:block; margin-bottom:8px; }
+
+    textarea{
+      width:100%;
+      min-height:160px;
+      resize:vertical;
+      border-radius:14px;
+      border:1px solid var(--line);
+      background:rgba(0,0,0,.22);
+      color:var(--text);
+      padding:12px 12px;
+      line-height:1.45;
+      outline:none;
+    }
+    textarea:focus{ border-color:rgba(110,168,255,.55); box-shadow:0 0 0 4px rgba(110,168,255,.12); }
+
+    .row{
+      display:grid;
+      grid-template-columns: 1.2fr 1fr 0.8fr;
+      gap:12px;
+    }
+    @media (max-width: 860px){ .row{ grid-template-columns: 1fr; } }
+
+    select, input[type="text"]{
+      width:100%;
+      border-radius:12px;
+      border:1px solid var(--line);
+      background:rgba(0,0,0,.22);
+      color:var(--text);
+      padding:10px 10px;
+      outline:none;
+    }
+    select:focus, input[type="text"]:focus{
+      border-color:rgba(110,168,255,.55);
+      box-shadow:0 0 0 4px rgba(110,168,255,.12);
+    }
+
+    .controls{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
+      justify-content:space-between;
+      border-top:1px solid var(--line);
+      padding-top:14px;
+    }
+
+    .btns{ display:flex; gap:10px; flex-wrap:wrap; }
+    button{
+      border:1px solid var(--line);
+      background:rgba(255,255,255,.06);
+      color:var(--text);
+      padding:10px 12px;
+      border-radius:12px;
+      cursor:pointer;
+      font-weight:600;
+      letter-spacing:.2px;
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      transition:transform .04s ease, background .15s ease, border-color .15s ease, opacity .15s ease;
+    }
+    button:hover{ background:rgba(255,255,255,.09); border-color:rgba(110,168,255,.35); }
+    button:active{ transform:translateY(1px); }
+    button:disabled{ opacity:.55; cursor:not-allowed; }
+
+    .status{
+      font-size:13px;
+      color:var(--muted);
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    .pill{
+      border:1px solid var(--line);
+      background:rgba(0,0,0,.18);
+      padding:6px 10px;
+      border-radius:999px;
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      font-size:12px;
+      color:var(--muted);
+    }
+    .pill.good{ border-color:rgba(51,209,154,.35); color:rgba(51,209,154,.95); }
+    .pill.bad{ border-color:rgba(255,92,122,.35); color:rgba(255,92,122,.95); }
+
+    .audioBox{
+      display:grid;
+      gap:8px;
+      border:1px dashed rgba(255,255,255,.18);
+      border-radius:14px;
+      padding:12px;
+      background:rgba(0,0,0,.12);
+    }
+    audio{ width:100%; }
+
+    .hint{
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.35;
+    }
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12px;
+      color: rgba(234,240,255,.9);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <header>
+      <div class="title">
+        <h1>OpenAI Text-to-Speech → WAV (3CX import)</h1>
+        <p>Preview & download a <span class="mono">.wav</span>. Calls your server proxy at <span class="mono">/api/tts</span>.</p>
+      </div>
+      <div class="pill" id="apiPill">Proxy: /api/tts</div>
+    </header>
+
+    <main>
+      <div>
+        <label for="text">Text</label>
+        <textarea id="text" placeholder="Type your greeting / IVR message here...">Thank you for calling. Please listen carefully, as our menu options have changed.</textarea>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="voice">Voice</label>
+          <select id="voice">
+            <!-- Common OpenAI TTS voices. Your backend can map/validate. -->
+            <option value="alloy">alloy</option>
+            <option value="verse">verse</option>
+            <option value="aria">aria</option>
+            <option value="ember">ember</option>
+            <option value="nova">nova</option>
+            <option value="shimmer">shimmer</option>
+            <option value="echo">echo</option>
+            <option value="fable">fable</option>
+            <option value="onyx">onyx</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="speed">Speed</label>
+          <select id="speed">
+            <option value="1">1.0 (normal)</option>
+            <option value="0.9">0.9 (slower)</option>
+            <option value="0.8">0.8 (slow)</option>
+            <option value="1.1">1.1 (faster)</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="filename">Filename</label>
+          <input id="filename" type="text" value="tts-3cx.wav" />
+        </div>
+      </div>
+
+      <div class="audioBox">
+        <div class="hint">
+          <b>Preview:</b> Generates audio and plays it here. <b>Download:</b> saves the same WAV file.
+          <br/>Tip for 3CX: you may prefer <span class="mono">PCM 16-bit mono @ 8kHz</span>. If your backend offers “3CX-safe mode”, enable it there.
+        </div>
+        <audio id="player" controls></audio>
+        <div class="status" id="status"></div>
+      </div>
+
+      <div class="controls">
+        <div class="btns">
+          <button id="btnPreview" type="button">▶️ Preview</button>
+          <button id="btnDownload" type="button" disabled>⬇️ Download WAV</button>
+          <button id="btnClear" type="button">🧹 Clear</button>
+        </div>
+        <div class="status">
+          <span class="pill" id="formatPill">Format: wav</span>
+          <span class="pill" id="statePill">Idle</span>
+        </div>
+      </div>
+
+      <div class="hint">
+        <b>Important:</b> This page does not store an API key. Your server must provide <span class="mono">POST /api/tts</span> and return WAV bytes.
+        <br/>
+        Example expected request JSON:
+        <span class="mono">{ "text": "...", "voice": "alloy", "format": "wav", "speed": 1 }</span>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    const elText = $("text");
+    const elVoice = $("voice");
+    const elSpeed = $("speed");
+    const elFilename = $("filename");
+    const elPlayer = $("player");
+
+    const btnPreview = $("btnPreview");
+    const btnDownload = $("btnDownload");
+    const btnClear = $("btnClear");
+
+    const apiPill = $("apiPill");
+    const statePill = $("statePill");
+    const status = $("status");
+
+    let lastBlob = null;
+    let lastObjectUrl = null;
+
+    function setState(label, kind="") {
+      statePill.textContent = label;
+      statePill.classList.remove("good","bad");
+      if (kind === "good") statePill.classList.add("good");
+      if (kind === "bad") statePill.classList.add("bad");
+    }
+
+    function setStatus(msg, kind="") {
+      status.innerHTML = "";
+      if (!msg) return;
+      const span = document.createElement("span");
+      span.className = "pill " + (kind || "");
+      span.textContent = msg;
+      status.appendChild(span);
+    }
+
+    function cleanupAudioUrl() {
+      if (lastObjectUrl) {
+        URL.revokeObjectURL(lastObjectUrl);
+        lastObjectUrl = null;
+      }
+    }
+
+    async function synthesize() {
+      const text = (elText.value || "").trim();
+      const voice = elVoice.value;
+      const speed = parseFloat(elSpeed.value || "1");
+
+      if (!text) {
+        setState("Missing text", "bad");
+        setStatus("Please enter some text.", "bad");
+        return null;
+      }
+
+      setState("Generating…");
+      setStatus("Sending request to /api/tts…");
+
+      // Abort if user clicks again quickly
+      btnPreview.disabled = true;
+      btnDownload.disabled = true;
+
+      try {
+        const res = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text,
+            voice,
+            format: "wav",
+            speed
+          })
+        });
+
+        if (!res.ok) {
+          const errText = await safeReadText(res);
+          throw new Error(`TTS error (${res.status}): ${errText || res.statusText}`);
+        }
+
+        const arrayBuf = await res.arrayBuffer();
+        const blob = new Blob([arrayBuf], { type: "audio/wav" });
+
+        setState("Ready", "good");
+        setStatus("Audio generated.", "good");
+
+        // Store for preview/download
+        lastBlob = blob;
+
+        // Attach to player
+        cleanupAudioUrl();
+        lastObjectUrl = URL.createObjectURL(blob);
+        elPlayer.src = lastObjectUrl;
+
+        btnDownload.disabled = false;
+
+        return blob;
+      } catch (err) {
+        console.error(err);
+        setState("Error", "bad");
+        setStatus(err.message || "Something went wrong.", "bad");
+        return null;
+      } finally {
+        btnPreview.disabled = false;
+      }
+    }
+
+    async function safeReadText(res) {
+      try { return await res.text(); } catch { return ""; }
+    }
+
+    btnPreview.addEventListener("click", async () => {
+      const blob = await synthesize();
+      if (blob) {
+        try {
+          await elPlayer.play();
+        } catch {
+          // Autoplay may be blocked; user can press play.
+        }
+      }
+    });
+
+    btnDownload.addEventListener("click", async () => {
+      // If we don't have a generated blob yet, generate first
+      if (!lastBlob) {
+        const blob = await synthesize();
+        if (!blob) return;
+      }
+
+      const nameRaw = (elFilename.value || "tts-3cx.wav").trim();
+      const filename = nameRaw.toLowerCase().endsWith(".wav") ? nameRaw : (nameRaw + ".wav");
+
+      const url = URL.createObjectURL(lastBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setStatus(`Downloaded ${filename}`, "good");
+    });
+
+    btnClear.addEventListener("click", () => {
+      elText.value = "";
+      elFilename.value = "tts-3cx.wav";
+      elVoice.selectedIndex = 0;
+      elSpeed.value = "1";
+
+      cleanupAudioUrl();
+      elPlayer.removeAttribute("src");
+      elPlayer.load();
+
+      lastBlob = null;
+      btnDownload.disabled = true;
+
+      setState("Idle");
+      setStatus("");
+    });
+
+    // little sanity indicator
+    apiPill.title = "Your server must implement POST /api/tts and return WAV bytes.";
+  </script>
+</body>
+</html>
